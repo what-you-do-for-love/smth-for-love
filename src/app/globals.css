@@ -1,0 +1,123 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #000000;
+  --border: #d1d5db;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #000000;
+    --border: #d1d5db;
+  }
+}
+
+body {
+  background: #ffffff;
+  color: #000000;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Make bold fonts visually thinner across the app */
+@layer utilities {
+  .font-semibold {
+    font-weight: 500;
+  }
+  .font-bold {
+    font-weight: 500;
+  }
+  .font-black {
+    font-weight: 600;
+  }
+}
+
+@layer base {
+  strong,
+  b {
+    font-weight: 500;
+  }
+
+  *, *::before, *::after {
+    border-color: var(--border);
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  @apply w-2;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-100 rounded;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-orange-400 rounded;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-orange-500;
+}
+
+/* Premium Responsive Utilities */
+@layer utilities {
+  .mobile-only {
+    display: block;
+  }
+  @media (min-width: 768px) {
+    .mobile-only {
+      display: none;
+    }
+  }
+
+  .desktop-only {
+    display: none;
+  }
+  @media (min-width: 768px) {
+    .desktop-only {
+      display: block;
+    }
+  }
+
+  /* Glassmorphism effect */
+  .glass {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+  }
+
+  /* Improved touch targets for mobile */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Hide scrollbar but keep functionality */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@layer base {
+  body {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  input, select, button {
+    @apply transition-all duration-200 outline-none;
+  }
+
+  input:focus, select:focus {
+    @apply ring-2 ring-orange-100 border-orange-500;
+  }
+}
