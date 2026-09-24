@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
 import { toast } from 'sonner';
 import { relationshipApi } from '@/api';
 import { getUserId } from '@/lib/ultis';
@@ -12,52 +13,11 @@ import {
     X,
     Check,
     RefreshCw,
-    Sparkles,
     Users,
-    Copy,
     ExternalLink,
     AlertCircle,
 } from 'lucide-react';
-
-// ---- Small partner card shown in the header ----
-function PartnerCard({ partner }: { partner: MyRelationship['partner'] }) {
-    const [copied, setCopied] = useState(false);
-
-    const copyCode = () => {
-        if (!partner) return;
-        navigator.clipboard.writeText(partner.loveCode).then(() => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-        });
-    };
-
-    return (
-        <div className="bg-gradient-to-br from-pink-50 to-rose-50 rounded-2xl border border-pink-100 p-5 flex items-center gap-4">
-            <div className="h-14 w-14 rounded-full bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center shadow-lg shadow-pink-200 flex-shrink-0">
-                <Heart className="h-7 w-7 text-white fill-white" />
-            </div>
-            <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-pink-500 uppercase tracking-wider mb-0.5">Your Partner</p>
-                <p className="text-base font-black text-gray-900 truncate">{partner?.name}</p>
-                <p className="text-xs text-gray-400 font-medium">@{partner?.userName}</p>
-            </div>
-            {partner && (
-                <div className="flex items-center gap-2 flex-shrink-0">
-                    <div className="bg-white rounded-xl px-3 py-1.5 border border-pink-100 flex items-center gap-1.5">
-                        <span className="text-sm font-black text-pink-600 tracking-widest">{partner.loveCode}</span>
-                        <button
-                            onClick={copyCode}
-                            title="Copy love code"
-                            className="text-gray-400 hover:text-pink-500 transition-colors"
-                        >
-                            {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
-                        </button>
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-}
+import { useT } from '@/i18n/LanguageProvider';
 
 // ---- Pending request card ----
 function PendingCard({
@@ -73,24 +33,29 @@ function PendingCard({
     accepting: number | null;
     rejecting: number | null;
 }) {
+    const t = useT();
     const sender = rel.user1;
     const isLoading = accepting === rel.id || rejecting === rel.id;
 
     return (
-        <div className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center gap-3 shadow-sm">
-            <div className="h-11 w-11 rounded-full bg-gradient-to-br from-amber-400 to-orange-400 flex items-center justify-center shadow shadow-orange-200 flex-shrink-0">
-                <Users className="h-5 w-5 text-white" />
+        <div className="bg-white rounded-2xl border border-gray-100 p-4 flex flex-col sm:flex-row sm:items-center gap-3 shadow-sm">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+                <div className="h-11 w-11 rounded-full bg-gradient-to-br from-amber-400 to-orange-400 flex items-center justify-center shadow shadow-orange-200 flex-shrink-0">
+                    <Users className="h-5 w-5 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                    <p className="text-sm font-black text-gray-900 truncate">{sender?.name}</p>
+                    <p className="text-xs text-gray-400 font-medium truncate">@{sender?.userName}</p>
+                    <p className="text-xs text-amber-600 font-medium mt-0.5">
+                        {t('relationship.theySent', { name: sender?.name ?? '' })}
+                    </p>
+                </div>
             </div>
-            <div className="flex-1 min-w-0">
-                <p className="text-sm font-black text-gray-900 truncate">{sender?.name}</p>
-                <p className="text-xs text-gray-400 font-medium">@{sender?.userName}</p>
-                <p className="text-xs text-amber-600 font-medium mt-0.5">wants to connect with you</p>
-            </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-2 flex-shrink-0 sm:justify-end">
                 <button
                     onClick={() => onReject(rel.id)}
                     disabled={isLoading}
-                    title="Reject"
+                    title={t('relationship.respondReject')}
                     className="h-9 w-9 rounded-xl border border-gray-200 bg-white flex items-center justify-center text-gray-400 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-all disabled:opacity-40"
                 >
                     <X className="h-4 w-4" />
@@ -98,7 +63,7 @@ function PendingCard({
                 <button
                     onClick={() => onAccept(rel.id)}
                     disabled={isLoading}
-                    title="Accept"
+                    title={t('relationship.respondAccept')}
                     className="h-9 w-9 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 flex items-center justify-center text-white shadow shadow-pink-200 hover:from-pink-600 hover:to-rose-600 transition-all disabled:opacity-40"
                 >
                     {isLoading ? (
@@ -120,6 +85,7 @@ function FindByCodePanel({
     myUserId: number;
     onRequestSent: () => void;
 }) {
+    const t = useT();
     const [code, setCode] = useState('');
     const [foundUser, setFoundUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(false);
@@ -137,7 +103,7 @@ function FindByCodePanel({
 
     const handleSearch = useCallback(async () => {
         if (code.length !== 6) {
-            setError('Love code must be 6 characters');
+            setError(t('relationship.codeRequired'));
             return;
         }
         setLoading(true);
@@ -148,7 +114,7 @@ function FindByCodePanel({
             const user = await relationshipApi.getByLoveCode(code);
             setFoundUser(user);
         } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : 'Not found';
+            const msg = err instanceof Error ? err.message : t('common.unknown');
             if (msg.toLowerCase().includes('not found')) {
                 setNotFound(true);
             } else {
@@ -157,19 +123,19 @@ function FindByCodePanel({
         } finally {
             setLoading(false);
         }
-    }, [code]);
+    }, [code, t]);
 
     const handleSendRequest = async () => {
         if (!foundUser) return;
         setSending(true);
         try {
             await relationshipApi.sendRequest({ senderId: myUserId, receiverId: foundUser.id });
-            toast.success(`Request sent to ${foundUser.name}!`);
+            toast.success(t('relationship.sentRequestTo', { name: foundUser.name }));
             setCode('');
             setFoundUser(null);
             onRequestSent();
         } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : 'Failed to send';
+            const msg = err instanceof Error ? err.message : t('relationship.requestFailed');
             toast.error(msg);
         } finally {
             setSending(false);
@@ -186,7 +152,7 @@ function FindByCodePanel({
                         value={code}
                         onChange={handleCodeInput}
                         onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                        placeholder="Enter 6-digit love code"
+                        placeholder={t('relationship.codePlaceholder')}
                         maxLength={6}
                         className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm font-bold placeholder-gray-400 tracking-widest text-center uppercase focus:outline-none focus:ring-2 focus:ring-pink-200 focus:border-pink-400 transition-all"
                     />
@@ -197,7 +163,7 @@ function FindByCodePanel({
                     className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 text-white text-sm font-bold shadow shadow-pink-200 hover:from-pink-600 hover:to-rose-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                 >
                     {loading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                    Find
+                    {t('partner.findPartner')}
                 </button>
             </div>
 
@@ -209,7 +175,7 @@ function FindByCodePanel({
 
             {notFound && (
                 <p className="text-xs text-gray-400 font-medium italic text-center py-2">
-                    No user found with that love code
+                    {t('common.unknown')}
                 </p>
             )}
 
@@ -234,10 +200,10 @@ function FindByCodePanel({
                             className="flex-shrink-0 px-3 py-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 text-white text-xs font-bold shadow shadow-pink-200 hover:from-pink-600 hover:to-rose-600 transition-all disabled:opacity-50 flex items-center gap-1.5"
                         >
                             {sending ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <UserPlus className="h-3.5 w-3.5" />}
-                            Send Request
+                            {t('relationship.sendRequest')}
                         </button>
                     ) : (
-                        <span className="flex-shrink-0 text-xs text-gray-400 font-medium italic px-2">unavailable</span>
+                        <span className="flex-shrink-0 text-xs text-gray-400 font-medium italic px-2">{t('common.unknown')}</span>
                     )}
                 </div>
             )}
@@ -247,6 +213,7 @@ function FindByCodePanel({
 
 // ---- Main Relationship section ----
 export default function RelationshipSection() {
+    const t = useT();
     const [myId, setMyId] = useState<number>(0);
     const [isReady, setIsReady] = useState(false);
 
@@ -290,10 +257,10 @@ export default function RelationshipSection() {
         setAccepting(relId);
         try {
             await relationshipApi.respondToRequest(relId, { responderId: myId, accept: true });
-            toast.success('Request accepted!');
+            toast.success(t('relationship.accepted'));
             await fetchAll();
         } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : 'Failed to accept';
+            const msg = err instanceof Error ? err.message : t('relationship.failedAccept');
             toast.error(msg);
         } finally {
             setAccepting(null);
@@ -304,10 +271,10 @@ export default function RelationshipSection() {
         setRejecting(relId);
         try {
             await relationshipApi.respondToRequest(relId, { responderId: myId, accept: false });
-            toast.success('Request declined');
+            toast.success(t('relationship.declined'));
             await fetchAll();
         } catch (err: unknown) {
-            const msg = err instanceof Error ? err.message : 'Failed to reject';
+            const msg = err instanceof Error ? err.message : t('relationship.failedReject');
             toast.error(msg);
         } finally {
             setRejecting(null);
@@ -325,56 +292,34 @@ export default function RelationshipSection() {
         );
     }
 
-    const hasPartner = myRelationship?.partner != null;
     const hasPending = pendingRequests.length > 0;
 
     return (
         <div className="space-y-6">
-            {/* Partner card or Find panel */}
-            {hasPartner ? (
-                <div className="space-y-4">
-                    <div className="flex items-center gap-2">
-                        <Sparkles className="h-4 w-4 text-pink-500" />
-                        <h2 className="text-sm font-black text-gray-700">Your Connection</h2>
+            {/* Pending requests summary (full list lives at /connection-requests) */}
+            {hasPending && (
+                <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                            <Users className="h-4 w-4 text-amber-500" />
+                            <h2 className="text-sm font-black text-gray-700">
+                                {t('relationship.incomingRequests')}
+                                <span className="ml-2 inline-flex items-center justify-center h-5 min-w-5 px-1 rounded-full bg-amber-400 text-white text-[10px] font-black">
+                                    {pendingRequests.length}
+                                </span>
+                            </h2>
+                        </div>
+                        <Link
+                            href="/connection-requests"
+                            className="text-[11px] font-bold text-pink-500 hover:text-pink-600 hover:underline"
+                        >
+                            {t('relationship.viewAll')}
+                        </Link>
                     </div>
-                    <PartnerCard partner={myRelationship!.partner} />
-                </div>
-            ) : (
-                <div className="space-y-4">
-                    <div className="flex items-center gap-2">
-                        <Heart className="h-4 w-4 text-pink-500" />
-                        <h2 className="text-sm font-black text-gray-700">Find Your Partner</h2>
-                    </div>
-                    <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-4">
-                        <p className="text-xs text-gray-500 font-medium">
-                            Enter your partner&apos;s 6-character love code to send a connection request.
-                        </p>
-                        <FindByCodePanel myUserId={myId} onRequestSent={fetchAll} />
-                    </div>
-                </div>
-            )}
 
-            {/* Pending requests */}
-            <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                    <Users className="h-4 w-4 text-amber-500" />
-                    <h2 className="text-sm font-black text-gray-700">
-                        Incoming Requests
-                        {hasPending && (
-                            <span className="ml-2 inline-flex items-center justify-center h-5 min-w-5 px-1 rounded-full bg-amber-400 text-white text-[10px] font-black">
-                                {pendingRequests.length}
-                            </span>
-                        )}
-                    </h2>
-                </div>
-
-                {!hasPending ? (
-                    <div className="bg-gray-50 rounded-2xl border border-gray-100 p-5 text-center">
-                        <p className="text-xs text-gray-400 font-medium italic">No pending requests</p>
-                    </div>
-                ) : (
+                    {/* Show first 2 inline; the rest are reachable on the dedicated page */}
                     <div className="space-y-2">
-                        {pendingRequests.map((rel) => (
+                        {pendingRequests.slice(0, 2).map((rel) => (
                             <PendingCard
                                 key={rel.id}
                                 rel={rel}
@@ -384,9 +329,33 @@ export default function RelationshipSection() {
                                 rejecting={rejecting}
                             />
                         ))}
+                        {pendingRequests.length > 2 && (
+                            <Link
+                                href="/connection-requests"
+                                className="block text-center text-xs font-bold text-pink-500 hover:text-pink-600 py-2"
+                            >
+                                {t('relationship.moreInInbox', { count: pendingRequests.length - 2 })}
+                            </Link>
+                        )}
                     </div>
-                )}
-            </div>
+                </div>
+            )}
+
+            {/* Find your partner (only when no connection yet) */}
+            {!myRelationship?.partner && (
+                <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                        <Heart className="h-4 w-4 text-pink-500" />
+                        <h2 className="text-sm font-black text-gray-700">{t('relationship.findYourPartner')}</h2>
+                    </div>
+                    <div className="bg-gray-50 p-5 rounded-2xl border border-gray-100 space-y-4">
+                        <p className="text-xs text-gray-500 font-medium">
+                            {t('relationship.findHelp')}
+                        </p>
+                        <FindByCodePanel myUserId={myId} onRequestSent={fetchAll} />
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

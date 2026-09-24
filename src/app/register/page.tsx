@@ -94,11 +94,11 @@ export default function RegisterPage() {
                 </div>
 
                 {/* Card */}
-                <div className="bg-white rounded-3xl shadow-xl shadow-pink-100/50 border border-pink-100 p-8">
+                <div className="bg-white rounded-3xl shadow-xl shadow-pink-100/50 border border-pink-100 p-5 sm:p-8">
                     <h2 className="text-xl font-black text-gray-900 mb-6 text-center">Sign Up</h2>
 
                     <form onSubmit={handleRegister} className="space-y-4">
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             {/* Username */}
                             <div>
                                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5" htmlFor="userName">

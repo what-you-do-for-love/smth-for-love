@@ -7,6 +7,7 @@ export type User = {
     department: string;
     loveCode: string;
     partnerId: number | null;
+    currentAvatarUrl?: string | null;
 };
 
 // ---- Partner (what you see of your partner) ----
