@@ -6,19 +6,22 @@ const PUBLIC_ROUTES = new Set<string>([
     '/login',
     '/register',
     '/forgot-password',
+    '/manifest.webmanifest',
 ]);
 
 // Static asset / file extensions — never redirected
-const PUBLIC_FILE_REGEX = /\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|map|woff2?|ttf|otf|eot)$/;
+const PUBLIC_FILE_REGEX = /\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|map|woff2?|ttf|otf|eot|webmanifest)$/;
 
 export function proxy(request: NextRequest) {
     const { pathname, search } = request.nextUrl;
 
-    // Skip Next.js internals, API routes, and static files
+    // Skip Next.js internals, API routes, static files, and the PWA manifest
     if (
         pathname.startsWith('/_next') ||
         pathname.startsWith('/api') ||
         pathname === '/favicon.ico' ||
+        pathname === '/sw.js' ||
+        pathname === '/manifest.webmanifest' ||
         PUBLIC_FILE_REGEX.test(pathname)
     ) {
         return NextResponse.next();
@@ -54,6 +57,6 @@ export function proxy(request: NextRequest) {
 export const config = {
     matcher: [
         // Run on everything except Next.js internals and static assets
-        '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)',
+        '/((?!_next/static|_next/image|favicon.ico|sw.js|manifest.webmanifest|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|webmanifest)$).*)',
     ],
 };

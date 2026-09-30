@@ -48,7 +48,8 @@ export default function TopNav() {
                     flex items-center gap-3
                 "
             >
-                {/* Brand */}
+                {/* Brand — icon-only on small phones (e.g. iPhone 13, 390px),
+                    icon + name once there's room (≥420px). */}
                 <Link
                     href="/dashboard"
                     className="inline-flex items-center gap-2 group flex-shrink-0"
@@ -56,7 +57,7 @@ export default function TopNav() {
                     <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center shadow shadow-pink-200 flex-shrink-0">
                         <Heart className="h-4 w-4 text-white fill-white" />
                     </div>
-                    <span className="text-base font-black text-gray-900 tracking-tight">
+                    <span className="hidden min-[420px]:inline text-base font-black text-gray-900 tracking-tight whitespace-nowrap">
                         {t('brand.name')}
                     </span>
                 </Link>
