@@ -5,12 +5,6 @@ import OneSignal from 'react-onesignal';
 
 const ONESIGNAL_APP_ID = process.env.NEXT_PUBLIC_ONESIGNAL_APP_ID ?? '';
 
-/** The shape we store on the BE so it can route via OneSignal. */
-export interface OneSignalSubscription {
-    subscriptionId: string; // OneSignal player_id / device.id
-    externalUserId?: string; // our userId
-}
-
 type PushState = 'unknown' | 'unsupported' | 'denied' | 'granted' | 'default';
 
 export function useOneSignal(userId: number | null) {
@@ -22,9 +16,20 @@ export function useOneSignal(userId: number | null) {
         if (!ONESIGNAL_APP_ID) return;
         initialized.current = true;
 
-        OneSignal.init({ appId: ONESIGNAL_APP_ID })
+        OneSignal.init({
+            appId: ONESIGNAL_APP_ID,
+            // We manage our own slidedown so the user can opt-in via the banner.
+            autoRegister: false,
+            autoResubscribe: false,
+        })
             .then(() => {
-                setPushState(Notification.permission as PushState);
+                // OneSignal.init attaches the SDK; query the current state.
+                try {
+                    const granted = OneSignal.Notifications.permission;
+                    setPushState(granted ? 'granted' : 'default');
+                } catch {
+                    setPushState('default');
+                }
             })
             .catch(() => {
                 setPushState('unsupported');
@@ -32,46 +37,55 @@ export function useOneSignal(userId: number | null) {
     }, []);
 
     /**
-     * Show the OneSignal native permission prompt.
+     * Show OneSignal's native slide-down prompt. On iPhone Safari PWA this is
+     * the OS prompt; on other browsers it's the in-page slidedown.
      * Returns true if the user granted permission.
      */
     const showPermissionPrompt = useCallback(async (): Promise<boolean> => {
         if (!initialized.current) return false;
         try {
-            // If already granted, this resolves immediately.
-            // If default, it shows the browser/OS native prompt.
-            const result = await OneSignal.showSlidedownPermissionPrompt();
-            setPushState(Notification.permission as PushState);
-            return result;
+            await OneSignal.Slidedown.promptPush();
+            const granted = OneSignal.Notifications.permission;
+            setPushState(granted ? 'granted' : 'denied');
+            return granted;
         } catch {
             return false;
         }
     }, []);
 
     /**
-     * Register this device's OneSignal player_id with our BE under `userId`.
-     * Called after the user grants permission so we can target them later.
+     * Tag the device with our userId + push the OneSignal player_id to our BE.
+     * Called after the user grants permission.
      */
     const registerWithBackend = useCallback(
         async (userId: number): Promise<void> => {
             if (!initialized.current) return;
             try {
-                const userId2 = await OneSignal.getUserId();
-                if (!userId2) return;
+                // Wait until we actually have a player_id — OneSignal may take a moment
+                // after permission grant to assign one.
+                let subscriptionId = OneSignal.User.PushSubscription.id;
+                if (!subscriptionId) {
+                    for (let i = 0; i < 10 && !subscriptionId; i++) {
+                        await new Promise((r) => setTimeout(r, 200));
+                        subscriptionId = OneSignal.User.PushSubscription.id;
+                    }
+                }
+                if (!subscriptionId) return;
 
-                // Tag the device with our userId so BE can look up by userId
-                await OneSignal.addTag('userId', String(userId));
+                // Tag the device with our userId for analytics / segmentation
+                OneSignal.User.addTag('userId', String(userId));
 
-                // External ID lets OneSignal identify the user across sessions
-                await OneSignal.setExternalUserId(String(userId));
+                // External ID lets OneSignal identify the user across sessions.
+                // login() also establishes a server-side alias for the userId.
+                await OneSignal.login(String(userId));
 
-                // Persist the player_id on our BE so we can send to this device
+                // Persist the player_id on our BE so we can target this device
                 await fetch('/api/pushsubscriptions/onesignal', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         requesterId: userId,
-                        subscriptionId: userId2,
+                        subscriptionId,
                     }),
                 });
             } catch (err) {
@@ -82,12 +96,13 @@ export function useOneSignal(userId: number | null) {
     );
 
     /**
-     * Remove the external user ID from OneSignal. Call on logout.
+     * Clear the user's external ID. Call on logout.
      */
     const removeFromBackend = useCallback(async (): Promise<void> => {
         if (!initialized.current) return;
         try {
-            await OneSignal.removeExternalUserId();
+            await OneSignal.logout();
+            OneSignal.User.removeAlias('external_id');
         } catch {
             // ignore
         }
