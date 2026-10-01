@@ -22,13 +22,24 @@ function AutoRegisterPush({ children }: { children: React.ReactNode }) {
 
     useEffect(() => {
         if (!userId) return;
-        // Once OneSignal finishes initializing and the user has already granted
-        // permission (a common case — they subscribed earlier on this device),
-        // ship the player_id to our BE so we can target them without making
-        // them click an "Enable push" button every time. Idempotent.
-        if (oneSignal.pushState !== 'granted') return;
-        void oneSignal.registerWithBackend(userId);
-    }, [userId, oneSignal.pushState, oneSignal]);
+        // Drive the OneSignal auto-flow exactly once per page-load:
+        //   1. ask BE whether this user already has a subscription row,
+        //   2. if not, show the slide-down prompt (browser grants → we ship
+        //      the player_id to BE; browser denies → we record `denied` and
+        //      stop),
+        //   3. if BE already has a row OR the browser already granted, skip the
+        //      prompt and just re-register (idempotent — covers the case where
+        //      the player_id rotated since last visit).
+        let cancelled = false;
+        (async () => {
+            const granted = await oneSignal.autoPromptIfMissing(userId);
+            if (cancelled || !granted) return;
+            await oneSignal.registerWithBackend(userId);
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [userId, oneSignal]);
 
     return <>{children}</>;
 }
