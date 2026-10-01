@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Heart, MapPin, Gift, Sparkles, Home } from 'lucide-react';
 import AccountMenu from './AccountMenu';
-import ConnectionRequestsBell from './ConnectionRequestsBell';
+import MessagesBell from './MessagesBell';
+import NotificationsBell from './NotificationsBell';
 import { useLanguage } from '@/i18n/LanguageProvider';
 
 // Icons are shared between languages, but labels follow the dictionary.
@@ -101,8 +102,9 @@ export default function TopNav() {
                 </nav>
 
                 {/* Notification + account */}
-                <div className="flex-shrink-0 flex items-center gap-2">
-                    <ConnectionRequestsBell />
+                <div className="flex-shrink-0 flex items-center gap-1.5 sm:gap-2">
+                    <MessagesBell />
+                    <NotificationsBell />
                     <AccountMenu />
                 </div>
             </div>

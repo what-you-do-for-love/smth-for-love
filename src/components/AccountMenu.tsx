@@ -24,6 +24,7 @@ import {
 import { userAvatarApi, uploadApi } from '@/api';
 import { UserAvatar } from '@/types';
 import { useLanguage } from '@/i18n/LanguageProvider';
+import ConnectionRequestsMenuItem from './ConnectionRequestsMenuItem';
 
 /**
  * Top-right account menu. Replaces the legacy per-page header.
@@ -291,6 +292,8 @@ export default function AccountMenu() {
                             className="hidden"
                             onChange={handleFileChange}
                         />
+
+                        <ConnectionRequestsMenuItem />
 
                         <Link
                             href="/change-password"

@@ -4,24 +4,34 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Bell, Loader2 } from 'lucide-react';
-import { relationshipApi } from '@/api';
+import { notificationApi } from '@/api';
+import { useSignalR } from '@/hooks/useSignalR';
 import { getUserId } from '@/lib/ultis';
+import { emitUnreadNotifications, onUnreadNotifications } from '@/lib/unreadBus';
 
 /**
- * Bell icon that lives in the TopNav next to the AccountMenu.
- * Shows a badge with the count of pending incoming connection requests,
- * and links to /connection-requests.
- *
- * Polls every 60s so the count stays fresh on long-lived sessions.
+ * Bell for in-app notifications. Polls unread count + reacts to SignalR
+ * `notification:received` events for instant updates.
  */
-export default function ConnectionRequestsBell() {
+export default function NotificationsBell() {
     const pathname = usePathname();
     const [mounted, setMounted] = useState(false);
-    const [count, setCount] = useState<number>(0);
+    const [unread, setUnread] = useState(0);
     const [loading, setLoading] = useState(true);
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => setMounted(true), []);
+
+    // Live updates — bump on any notification (except new_message, which the
+    // MessagesBell already counts separately).
+    useSignalR({
+        enabled: mounted,
+        onEvent: (event) => {
+            if (event.type === 'notification:received' && event.payload.type !== 'new_message') {
+                setUnread((n) => n + 1);
+            }
+        },
+    });
 
     useEffect(() => {
         if (!mounted) return;
@@ -30,22 +40,28 @@ export default function ConnectionRequestsBell() {
             setLoading(false);
             return;
         }
-        const parsed = parseInt(uid, 10);
+        const userId = parseInt(uid, 10);
 
-        const fetchCount = async () => {
+        const fetchUnread = async () => {
             try {
-                const list = await relationshipApi.getPendingRequests(parsed);
-                setCount(Array.isArray(list) ? list.length : 0);
+                const r = await notificationApi.unreadCount(userId);
+                const next = r?.unreadCount ?? 0;
+                setUnread(next);
+                emitUnreadNotifications(next);
             } catch {
-                // silent — keep last-known count
+                // silent
             } finally {
                 setLoading(false);
             }
         };
 
-        fetchCount();
-        const id = setInterval(fetchCount, 60_000);
-        return () => clearInterval(id);
+        fetchUnread();
+        const id = setInterval(fetchUnread, 60_000);
+        const offSync = onUnreadNotifications((u) => setUnread(u));
+        return () => {
+            clearInterval(id);
+            offSync();
+        };
     }, [mounted]);
 
     if (!mounted) {
@@ -57,7 +73,7 @@ export default function ConnectionRequestsBell() {
         );
     }
 
-    const isActive = pathname === '/connection-requests';
+    const isActive = pathname?.startsWith('/notifications') ?? false;
     const linkInactive =
         'inline-flex items-center justify-center h-9 w-9 rounded-full transition-all flex-shrink-0 text-gray-600 hover:bg-pink-50 hover:text-gray-900';
     const linkActive =
@@ -65,8 +81,8 @@ export default function ConnectionRequestsBell() {
 
     return (
         <Link
-            href="/connection-requests"
-            aria-label={`Connection requests${count > 0 ? ` (${count} pending)` : ''}`}
+            href="/notifications"
+            aria-label={`Notifications${unread > 0 ? ` (${unread} unread)` : ''}`}
             aria-current={isActive ? 'page' : undefined}
             className={`relative ${isActive ? linkActive : linkInactive}`}
         >
@@ -75,16 +91,14 @@ export default function ConnectionRequestsBell() {
             ) : (
                 <Bell className="h-4 w-4" />
             )}
-            {count > 0 && (
+            {unread > 0 && (
                 <span
                     className={`absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-black border-2 border-white shadow ${
-                        isActive
-                            ? 'bg-white text-pink-600'
-                            : 'bg-amber-400 text-white'
+                        isActive ? 'bg-white text-pink-600' : 'bg-amber-400 text-white'
                     }`}
                     aria-hidden
                 >
-                    {count > 99 ? '99+' : count}
+                    {unread > 99 ? '99+' : unread}
                 </span>
             )}
         </Link>

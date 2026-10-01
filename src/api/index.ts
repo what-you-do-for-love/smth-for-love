@@ -5,3 +5,5 @@ export * from './relationshipApi';
 export * from './memoryApi';
 export * from './uploadApi';
 export * from './loveApi';
+export * from './messageApi';
+export * from './notificationApi';
