@@ -184,11 +184,60 @@ export function useOneSignal(userId: number | null) {
         }
     }, []);
 
+    /**
+     * Disable push for this device + drop the BE subscription row so we stop
+     * targeting the user. Also flips the browser permission UI back to the
+     * "default" state so the user can re-enable later from the same banner.
+     * Idempotent.
+     */
+    const disablePush = useCallback(async (uid: number): Promise<boolean> => {
+        if (!initialized.current) return false;
+        try {
+            // Capture player_id BEFORE opting out — after optOut the SDK may
+            // clear it.
+            const playerId = OneSignal.User.PushSubscription.id;
+            try {
+                // Opt the user out so OneSignal stops sending pushes and the
+                // browser permission state resets to 'default'.
+                await OneSignal.User.PushSubscription.optOut();
+            } catch {
+                // ignore — optOut may fail on browsers that don't support it
+            }
+
+            if (uid > 0) {
+                try {
+                    // Drop the BE row. We send the player_id so the BE only
+                    // removes this specific device row, not every row the user
+                    // might have (e.g. desktop + mobile).
+                    if (playerId) {
+                        await api.delete<void>(
+                            `/api/pushsubscriptions/onesignal?userId=${uid}&playerId=${encodeURIComponent(playerId)}`,
+                        );
+                    } else {
+                        await api.delete<void>(
+                            `/api/pushsubscriptions/onesignal?userId=${uid}`,
+                        );
+                    }
+                } catch (err) {
+                    console.warn('[OneSignal] BE unregister failed:', err);
+                }
+            }
+
+            const native = readNativePermission() ?? 'default';
+            setPushState(nativeToState(native));
+            return true;
+        } catch (err) {
+            console.warn('[OneSignal] disablePush failed:', err);
+            return false;
+        }
+    }, []);
+
     return {
         pushState,
         showPermissionPrompt,
         registerWithBackend,
         autoPromptIfMissing,
+        disablePush,
         removeFromBackend,
     };
 }

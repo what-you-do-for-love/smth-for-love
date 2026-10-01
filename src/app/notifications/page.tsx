@@ -142,6 +142,19 @@ export default function NotificationsPage() {
         toast.success(granted ? t('noti.pushEnabled') : t('noti.pushDenied'));
     };
 
+    const [disabling, setDisabling] = useState(false);
+    const handleDisablePush = async () => {
+        if (!myId) return;
+        setDisabling(true);
+        try {
+            const ok = await oneSignal.disablePush(myId);
+            setPushState(oneSignal.pushState);
+            toast.success(ok ? t('noti.pushDisabled') : t('common.failed'));
+        } finally {
+            setDisabling(false);
+        }
+    };
+
     const handleOpen = (n: AppNotification) => {
         if (!n.isRead) void handleMarkRead(n.id);
         try {
@@ -201,8 +214,15 @@ export default function NotificationsPage() {
 
             {/* Push subscription banner — surfaces on iPhone Safari PWA where
                 the Web Push API is unsupported by OneSignal so users would
-                otherwise silently miss new-message notifications. */}
-            <PushBanner state={pushState} onEnable={handleEnablePush} t={t} />
+                otherwise silently miss new-message notifications. Shows the
+                current state and lets the user enable or disable push. */}
+            <PushBanner
+                state={pushState}
+                onEnable={handleEnablePush}
+                onDisable={handleDisablePush}
+                disabling={disabling}
+                t={t}
+            />
 
             {/* Filter tabs */}
             <div className="inline-flex p-1 bg-white rounded-2xl border border-gray-100 shadow-sm">
@@ -297,13 +317,22 @@ function NotificationIcon({ kind }: { kind: NotificationKind }) {
 function PushBanner({
     state,
     onEnable,
+    onDisable,
+    disabling,
     t,
 }: {
     state: PushState;
     onEnable: () => void | Promise<void>;
+    onDisable: () => void | Promise<void>;
+    disabling: boolean;
     t: (key: string, params?: Record<string, string | number>) => string;
 }) {
-    if (state === 'unknown' || state === 'granted') return null;
+    // Still probing — nothing actionable to show yet.
+    if (state === 'unknown') return null;
+
+    // The browser doesn't expose `Notification` at all (very rare on
+    // modern browsers). Tell the user instead of letting them tap a
+    // button that can't do anything.
     if (state === 'unsupported') {
         return (
             <div className="bg-white rounded-3xl border border-gray-100 p-4 text-xs text-gray-500">
@@ -311,19 +340,52 @@ function PushBanner({
             </div>
         );
     }
-    const blocked = state === 'denied';
+
+    const granted = state === 'granted';
+    const denied = state === 'denied';
+
     return (
         <div className="bg-white rounded-3xl border border-gray-100 p-4 flex items-center gap-3 shadow-xl shadow-pink-50/50">
-            <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center flex-shrink-0">
-                <BellRing className="h-5 w-5 text-white" />
+            <div
+                className={`h-10 w-10 rounded-2xl flex items-center justify-center flex-shrink-0 ${
+                    granted
+                        ? 'bg-gradient-to-br from-emerald-400 to-teal-500'
+                        : denied
+                          ? 'bg-gradient-to-br from-gray-300 to-gray-400'
+                          : 'bg-gradient-to-br from-pink-400 to-rose-500'
+                }`}
+            >
+                {granted ? (
+                    <BellRing className="h-5 w-5 text-white" />
+                ) : (
+                    <Bell className="h-5 w-5 text-white" />
+                )}
             </div>
             <div className="flex-1 min-w-0">
-                <p className="font-bold text-gray-900 text-sm">{t('noti.enablePush')}</p>
+                <p className="font-bold text-gray-900 text-sm">
+                    {granted
+                        ? t('noti.pushOn')
+                        : denied
+                          ? t('noti.pushBlockedTitle')
+                          : t('noti.enablePush')}
+                </p>
                 <p className="text-xs text-gray-500 mt-0.5">
-                    {blocked ? t('noti.pushDenied') : t('noti.enablePushDesc')}
+                    {granted
+                        ? t('noti.pushOnDesc')
+                        : denied
+                          ? t('noti.pushBlockedDesc')
+                          : t('noti.enablePushDesc')}
                 </p>
             </div>
-            {!blocked && state === 'default' && (
+            {granted ? (
+                <button
+                    onClick={onDisable}
+                    disabled={disabling}
+                    className="px-3 py-2 rounded-xl bg-white border border-gray-200 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                >
+                    {disabling ? '…' : t('noti.pushDisable')}
+                </button>
+            ) : denied ? null : (
                 <button
                     onClick={onEnable}
                     className="px-3 py-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 text-white text-xs font-bold hover:from-pink-600 hover:to-rose-600"
