@@ -45,15 +45,29 @@ export function useOneSignal(userId: number | null) {
     const autoPromptAttempted = useRef(false);
 
     useEffect(() => {
-        if (initialized.current) return;
-        if (!ONESIGNAL_APP_ID) return;
-        initialized.current = true;
-
-        // Reveal the banner immediately using the raw browser permission
-        // (synchronous, always available where the API exists). This avoids a
-        // flash of "nothing" while OneSignal's async init resolves.
+        // Always read the raw browser permission first — it's synchronous and
+        // works even if OneSignal SDK fails to load (network blocked, ad-blocker,
+        // iOS PWA restrictions, etc.). This ensures the banner reflects reality
+        // immediately instead of staying in the 'unknown' skeleton forever.
         const initialNative = readNativePermission();
         if (initialNative) setPushState(nativeToState(initialNative));
+
+        // Also poll for ~10s in case the browser exposes `Notification` lazily
+        // (Safari PWA on iOS has been seen to do this).
+        let elapsed = 0;
+        const interval = window.setInterval(() => {
+            elapsed += 500;
+            const native = readNativePermission();
+            if (native) setPushState(nativeToState(native));
+            if (elapsed >= 10_000) window.clearInterval(interval);
+        }, 500);
+
+        if (!ONESIGNAL_APP_ID) {
+            return () => window.clearInterval(interval);
+        }
+
+        if (initialized.current) return () => window.clearInterval(interval);
+        initialized.current = true;
 
         OneSignal.init({
             appId: ONESIGNAL_APP_ID,
@@ -76,35 +90,55 @@ export function useOneSignal(userId: number | null) {
                 }
             });
 
-        // Some browsers (notably iOS Safari PWA) only expose the OneSignal
-        // permissionNative field after a brief delay. Poll for up to ~10s so
-        // the banner reflects the actual state instead of staying 'unknown'.
-        let elapsed = 0;
-        const interval = window.setInterval(() => {
-            elapsed += 500;
-            const native = readNativePermission();
-            if (native) {
-                setPushState(nativeToState(native));
-            }
-            if (elapsed >= 10_000) window.clearInterval(interval);
-        }, 500);
-
         return () => window.clearInterval(interval);
     }, []);
 
     /**
-     * Show OneSignal's native slide-down prompt. On iPhone Safari (PWA) this
-     * is the system permission prompt; on Chrome/Edge/Firefox it's the in-page
-     * slidedown. Returns true if the user granted permission.
+     * Detect iOS Safari (incl. standalone/PWA mode). On iOS the OneSignal
+     * slide-down prompt cannot fire the native permission dialog — Apple's
+     * policy requires us to call `Notification.requestPermission()` directly
+     * from a user gesture. We branch the prompt flow accordingly.
+     */
+    function isIosSafari(): boolean {
+        if (typeof navigator === 'undefined') return false;
+        const ua = navigator.userAgent;
+        const isIos = /iPad|iPhone|iPod/.test(ua) || (ua.includes('Mac') && 'ontouchend' in document);
+        const isWebkit = /WebKit/.test(ua) && !/Chrome|CriOS|FxiOS|EdgiOS/.test(ua);
+        return isIos && isWebkit;
+    }
+
+    /**
+     * Request notification permission. On iOS Safari (incl. PWA) we call the
+     * native `Notification.requestPermission()` directly — OneSignal's slide-
+     * down prompt doesn't work there because Apple only allows the system
+     * dialog when invoked from a user gesture without any SDK in between.
+     * Elsewhere we use OneSignal's slide-down for the nicest UX.
+     * Returns true if the user granted permission.
      */
     const showPermissionPrompt = useCallback(async (): Promise<boolean> => {
+        const apply = (native: NotificationPermission | null) => {
+            const state = nativeToState(native ?? 'default');
+            setPushState(state);
+            return state === 'granted';
+        };
+
+        // iOS Safari (incl. standalone PWA) — native prompt only.
+        if (isIosSafari()) {
+            try {
+                if (typeof window !== 'undefined' && typeof window.Notification !== 'undefined') {
+                    const result = await window.Notification.requestPermission();
+                    return apply(result);
+                }
+                return false;
+            } catch {
+                return false;
+            }
+        }
+
         if (!initialized.current) return false;
         try {
             await OneSignal.Slidedown.promptPush();
-            const native = readNativePermission() ?? 'default';
-            const state = nativeToState(native);
-            setPushState(state);
-            return state === 'granted';
+            return apply(readNativePermission());
         } catch {
             return false;
         }
@@ -161,6 +195,31 @@ export function useOneSignal(userId: number | null) {
             console.warn('[OneSignal] registerWithBackend failed:', err);
         }
     }, []);
+
+    /**
+     * iOS-Safari-safe variant. On iOS we MUST call the native
+     * `Notification.requestPermission()` from a user gesture — OneSignal's
+     * `promptPush()` is a no-op. After the user grants, we still rely on
+     * OneSignal to deliver (it registers the device on its side via the
+     * SDK loaded from `OneSignal.init`). Then we register the player_id
+     * with our BE.
+     */
+    const registerIosPush = useCallback(async (uid: number): Promise<boolean> => {
+        if (typeof window === 'undefined' || typeof window.Notification === 'undefined') {
+            return false;
+        }
+        try {
+            const result = await window.Notification.requestPermission();
+            const granted = result === 'granted';
+            setPushState(granted ? 'granted' : 'denied');
+            if (granted) {
+                await registerWithBackend(uid);
+            }
+            return granted;
+        } catch {
+            return false;
+        }
+    }, [registerWithBackend]);
 
     /**
      * Auto-prompt flow: called once after login. If the BE has no OneSignal
@@ -263,6 +322,7 @@ export function useOneSignal(userId: number | null) {
     return {
         pushState,
         showPermissionPrompt,
+        registerIosPush,
         registerWithBackend,
         autoPromptIfMissing,
         disablePush,

@@ -131,13 +131,27 @@ export default function NotificationsPage() {
     };
 
     const handleEnablePush = async () => {
-        // Show OneSignal's native slide-down prompt. On iOS Safari (PWA) this
-        // is the system permission prompt; on Chrome/Edge/Firefox it's the
-        // browser's.
-        const granted = await oneSignal.showPermissionPrompt();
-        if (granted && myId > 0) {
-            await oneSignal.registerWithBackend(myId);
-        }
+        // iOS Safari (incl. standalone PWA) doesn't allow OneSignal's slide-down
+        // to trigger the system permission dialog — Apple's policy forces us
+        // to call `Notification.requestPermission()` directly. Everywhere else
+        // OneSignal's slide-down gives a friendlier UX.
+        const isIos =
+            typeof navigator !== 'undefined' &&
+            (/iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                (navigator.userAgent.includes('Mac') && 'ontouchend' in document)) &&
+            /WebKit/.test(navigator.userAgent) &&
+            !/Chrome|CriOS|FxiOS|EdgiOS/.test(navigator.userAgent);
+
+        const granted = isIos
+            ? await oneSignal.registerIosPush(myId)
+            : await (async () => {
+                  const ok = await oneSignal.showPermissionPrompt();
+                  if (ok && myId > 0) {
+                      await oneSignal.registerWithBackend(myId);
+                  }
+                  return ok;
+              })();
+
         setPushState(oneSignal.pushState);
         toast.success(granted ? t('noti.pushEnabled') : t('noti.pushDenied'));
     };
