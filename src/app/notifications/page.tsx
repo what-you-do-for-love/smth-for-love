@@ -327,8 +327,23 @@ function PushBanner({
     disabling: boolean;
     t: (key: string, params?: Record<string, string | number>) => string;
 }) {
-    // Still probing — nothing actionable to show yet.
-    if (state === 'unknown') return null;
+    // Still probing. Show a thin skeleton so the slot is reserved and there's
+    // no "flash of nothing" / hydration flicker. The real state replaces it
+    // within a few hundred ms via pollNativePermission() in the hook.
+    if (state === 'unknown') {
+        return (
+            <div
+                data-push-state="unknown"
+                className="rounded-3xl border border-gray-100 bg-white p-4 flex items-center gap-3 shadow-sm"
+            >
+                <div className="h-10 w-10 rounded-2xl bg-gray-100 flex-shrink-0" />
+                <div className="flex-1 min-w-0 space-y-1.5">
+                    <div className="h-3 w-32 bg-gray-100 rounded" />
+                    <div className="h-2.5 w-48 bg-gray-50 rounded" />
+                </div>
+            </div>
+        );
+    }
 
     // The browser doesn't expose `Notification` at all (very rare on
     // modern browsers). Tell the user instead of letting them tap a
