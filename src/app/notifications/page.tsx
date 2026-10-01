@@ -10,11 +10,12 @@ import { getUserId } from '@/lib/ultis';
 import { useT } from '@/i18n/LanguageProvider';
 import { notificationApi } from '@/api';
 import { useSignalR } from '@/hooks/useSignalR';
-import { ensurePushSubscribed, isPushDenied, isPushGranted, pushPermissionState } from '@/lib/pushService';
+import { useOneSignal } from '@/hooks/useOneSignal';
 import { emitUnreadNotifications } from '@/lib/unreadBus';
 import type { AppNotification, NotificationKind } from '@/types';
 
 type Filter = 'all' | 'unread';
+type PushState = 'unknown' | 'unsupported' | 'denied' | 'granted' | 'default';
 
 export default function NotificationsPage() {
     const isAuthed = useRequireAuth();
@@ -26,7 +27,9 @@ export default function NotificationsPage() {
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState<Filter>('all');
     const [unreadCount, setUnreadCount] = useState(0);
-    const [pushState, setPushState] = useState<'unknown' | 'unsupported' | 'denied' | 'granted' | 'default'>('unknown');
+    const [pushState, setPushState] = useState<PushState>('unknown');
+
+    const oneSignal = useOneSignal(mounted && isAuthed && myId > 0 ? myId : null);
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => setMounted(true), []);
@@ -37,9 +40,8 @@ export default function NotificationsPage() {
     }, []);
 
     useEffect(() => {
-        if (typeof window === 'undefined') return;
-        setPushState(pushPermissionState());
-    }, [mounted]);
+        setPushState(oneSignal.pushState);
+    }, [oneSignal.pushState]);
 
     const fetchAll = useCallback(async () => {
         if (!myId) return;
@@ -129,8 +131,14 @@ export default function NotificationsPage() {
     };
 
     const handleEnablePush = async () => {
-        const granted = await ensurePushSubscribed();
-        setPushState(pushPermissionState());
+        // Show OneSignal's native slide-down prompt. On iOS Safari (PWA) this
+        // is the system permission prompt; on Chrome/Edge/Firefox it's the
+        // browser's.
+        const granted = await oneSignal.showPermissionPrompt();
+        if (granted && myId > 0) {
+            await oneSignal.registerWithBackend(myId);
+        }
+        setPushState(oneSignal.pushState);
         toast.success(granted ? t('noti.pushEnabled') : t('noti.pushDenied'));
     };
 
@@ -191,7 +199,9 @@ export default function NotificationsPage() {
                 )}
             </div>
 
-            {/* Push subscription banner */}
+            {/* Push subscription banner — surfaces on iPhone Safari PWA where
+                the Web Push API is unsupported by OneSignal so users would
+                otherwise silently miss new-message notifications. */}
             <PushBanner state={pushState} onEnable={handleEnablePush} t={t} />
 
             {/* Filter tabs */}
@@ -289,7 +299,7 @@ function PushBanner({
     onEnable,
     t,
 }: {
-    state: 'unknown' | 'unsupported' | 'denied' | 'granted' | 'default';
+    state: PushState;
     onEnable: () => void | Promise<void>;
     t: (key: string, params?: Record<string, string | number>) => string;
 }) {
@@ -301,7 +311,7 @@ function PushBanner({
             </div>
         );
     }
-    const blocked = isPushDenied();
+    const blocked = state === 'denied';
     return (
         <div className="bg-white rounded-3xl border border-gray-100 p-4 flex items-center gap-3 shadow-xl shadow-pink-50/50">
             <div className="h-10 w-10 rounded-2xl bg-gradient-to-br from-pink-400 to-rose-500 flex items-center justify-center flex-shrink-0">

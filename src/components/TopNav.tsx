@@ -6,6 +6,7 @@ import { Heart, MapPin, Gift, Sparkles, Home } from 'lucide-react';
 import AccountMenu from './AccountMenu';
 import MessagesBell from './MessagesBell';
 import NotificationsBell from './NotificationsBell';
+import MoreMenu from './MoreMenu';
 import { useLanguage } from '@/i18n/LanguageProvider';
 
 // Icons are shared between languages, but labels follow the dictionary.
@@ -16,6 +17,12 @@ const NAV_ICONS = [
     { href: '/cities', icon: MapPin, labelKey: 'nav.places' },
     { href: '/gifts', icon: Gift, labelKey: 'nav.gifts' },
 ] as const;
+
+// On narrow screens we surface the first three (most-used) inline and put the
+// remaining two behind a hamburger menu — otherwise the row overflows on
+// 360px-class phones. The split mirrors what most mobile apps do for the
+// "more" overflow.
+const PRIMARY_NAV_HREFS = new Set<string>(['/dashboard', '/memories', '/anniversary']);
 
 const iconOnlyBase =
     'inline-flex items-center justify-center h-9 w-9 rounded-full transition-all flex-shrink-0';
@@ -28,8 +35,10 @@ const linkActive =
 /**
  * Single-row top navigation.
  * - Brand left · nav links middle · avatar right
- * - Mobile: icons only, all 5 fit on one row.
- * - Desktop (≥lg): icon + label, centered between brand and avatar.
+ * - Mobile (<md, i.e. ≤767px): brand icon + 3 primary nav icons + hamburger
+ *   overflow + right widgets. The top row can't fit all 5 nav icons on a 360px
+ *   phone, so Places + Gifts move into a dropdown (MoreMenu).
+ * - md+ (≥768px): brand + name · 5 nav pills with icon + label · right widgets.
  */
 export default function TopNav() {
     const pathname = usePathname();
@@ -46,7 +55,7 @@ export default function TopNav() {
                 className="
                     mx-auto max-w-[1440px] w-full
                     h-14 px-4 sm:px-6 lg:px-8
-                    flex items-center gap-3
+                    flex items-center gap-2 sm:gap-3
                 "
             >
                 {/* Brand — icon-only on small phones (e.g. iPhone 13, 390px),
@@ -63,12 +72,14 @@ export default function TopNav() {
                     </span>
                 </Link>
 
-                {/* Nav links — centered between brand and avatar */}
+                {/* Nav links — centered between brand and avatar. The 5 links
+                    collapse to 3 inline icons + a hamburger overflow on mobile
+                    so the row stays within ~360px without horizontal overflow. */}
                 <nav
-                    className="flex-1 min-w-0 flex items-center justify-center gap-1 sm:gap-2"
+                    className="flex-1 min-w-0 flex items-center justify-center gap-1 lg:gap-2"
                     aria-label="Primary"
                 >
-                    {NAV_ICONS.map((item) => {
+                    {NAV_ICONS.filter((item) => PRIMARY_NAV_HREFS.has(item.href)).map((item) => {
                         const Icon = item.icon;
                         const active = isActive(item.href);
                         const label = t(item.labelKey);
@@ -83,26 +94,49 @@ export default function TopNav() {
                                 className={`
                                     ${active ? linkActive : linkInactive}
                                     ${iconOnlyBase}
-                                    lg:hidden
-                                    xl:inline-flex
-                                    xl:w-auto
-                                    xl:h-auto
-                                    xl:px-3
-                                    xl:py-1.5
-                                    xl:gap-1.5
+                                    md:hidden
                                 `}
                             >
-                                <Icon className="h-4 w-4 xl:h-4 xl:w-4" />
-                                <span className="hidden xl:inline">
-                                    {label}
-                                </span>
+                                <Icon className="h-4 w-4" />
                             </Link>
                         );
                     })}
+
+                    {/* Mobile: the hamburger holds Places + Gifts. Hidden on md+
+                        because the full pill row below takes its place. */}
+                    <MoreMenu />
+
+                    {/* md+ (~768px): full pill row with icon + label. Fits the
+                        roomy ≥768px layout; the narrower <md layout uses the
+                        3-icon + hamburger combo instead. */}
+                    <div className="hidden md:flex items-center gap-1 lg:gap-2">
+                        {NAV_ICONS.map((item) => {
+                            const Icon = item.icon;
+                            const active = isActive(item.href);
+                            const label = t(item.labelKey);
+
+                            return (
+                                <Link
+                                    key={item.href}
+                                    href={item.href}
+                                    aria-current={active ? 'page' : undefined}
+                                    aria-label={label}
+                                    title={label}
+                                    className={`
+                                        ${active ? linkActive : linkInactive}
+                                        ${pillBase}
+                                    `}
+                                >
+                                    <Icon className="h-4 w-4" />
+                                    <span>{label}</span>
+                                </Link>
+                            );
+                        })}
+                    </div>
                 </nav>
 
                 {/* Notification + account */}
-                <div className="flex-shrink-0 flex items-center gap-1.5 sm:gap-2">
+                <div className="flex-shrink-0 flex items-center gap-1 sm:gap-2">
                     <MessagesBell />
                     <NotificationsBell />
                     <AccountMenu />

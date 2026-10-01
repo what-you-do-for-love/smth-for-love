@@ -112,6 +112,7 @@ const VI: Dict = {
     'common.openPhotoViewer': 'Mở trình xem ảnh',
     'common.removeImage': 'Xóa ảnh',
     'common.you': 'Bạn',
+    'common.more': 'Thêm',
     'common.unknown': 'Chưa rõ',
     'common.friendFallback': 'Bạn thân',
 
@@ -554,6 +555,7 @@ const EN: Dict = {
     'common.you': 'You',
     'common.unknown': 'Unknown',
     'common.friendFallback': 'Friend',
+    'common.more': 'More',
 
     // Dashboard
     'dashboard.welcomeBack': 'Welcome back',

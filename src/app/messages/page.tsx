@@ -461,7 +461,7 @@ function MessagesPageInner() {
     }
 
     return (
-        <div className="flex flex-col h-[calc(100dvh-3.5rem)] -mx-4 sm:-mx-6 lg:-mx-8 -mt-4 sm:-mt-6 -mb-12 md:-mb-8">
+        <div className="flex flex-col h-[calc(100dvh-3.5rem)] overflow-hidden">
             {/* Header */}
             <div className="flex items-center gap-3 px-4 sm:px-6 lg:px-8 pt-2 pb-3 flex-shrink-0">
                 <Link
