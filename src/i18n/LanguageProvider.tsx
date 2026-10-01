@@ -502,6 +502,7 @@ const VI: Dict = {
     'noti.pushBlockedTitle': 'Thông báo đang bị chặn',
     'noti.pushBlockedDesc': 'Mở cài đặt trình duyệt để cho phép nhận thông báo.',
     'noti.pushUnsupported': 'Trình duyệt không hỗ trợ thông báo đẩy',
+    'noti.enablePushBtn': 'Bật',
     'noti.tabAll': 'Tất cả',
     'noti.tabUnread': 'Chưa đọc',
 
@@ -949,6 +950,7 @@ const EN: Dict = {
     'noti.pushBlockedTitle': 'Notifications are blocked',
     'noti.pushBlockedDesc': 'Open your browser settings to allow notifications.',
     'noti.pushUnsupported': 'Your browser doesn\'t support push notifications',
+    'noti.enablePushBtn': 'Enable',
     'noti.tabAll': 'All',
     'noti.tabUnread': 'Unread',
 

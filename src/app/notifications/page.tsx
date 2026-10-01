@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { ArrowLeft, Bell, BellRing, CheckCheck, Heart, Loader2 } from 'lucide-react';
+import { ArrowLeft, Bell, BellOff, BellRing, CheckCheck, Heart, Loader2 } from 'lucide-react';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { getUserId } from '@/lib/ultis';
 import { useT } from '@/i18n/LanguageProvider';
@@ -345,7 +345,16 @@ function PushBanner({
     const denied = state === 'denied';
 
     return (
-        <div className="bg-white rounded-3xl border border-gray-100 p-4 flex items-center gap-3 shadow-xl shadow-pink-50/50">
+        <div
+            data-push-state={state}
+            className={`rounded-3xl border p-4 flex items-center gap-3 shadow-sm ${
+                granted
+                    ? 'bg-gradient-to-r from-emerald-50 to-teal-50 border-emerald-200'
+                    : denied
+                      ? 'bg-gray-50 border-gray-200'
+                      : 'bg-white border-gray-100 shadow-pink-50/50'
+            }`}
+        >
             <div
                 className={`h-10 w-10 rounded-2xl flex items-center justify-center flex-shrink-0 ${
                     granted
@@ -381,16 +390,21 @@ function PushBanner({
                 <button
                     onClick={onDisable}
                     disabled={disabling}
-                    className="px-3 py-2 rounded-xl bg-white border border-gray-200 text-xs font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+                    className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-white border border-rose-200 text-xs font-bold text-rose-600 hover:bg-rose-50 disabled:opacity-60"
                 >
-                    {disabling ? '…' : t('noti.pushDisable')}
+                    {disabling ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                        <BellOff className="h-3 w-3" />
+                    )}
+                    {t('noti.pushDisable')}
                 </button>
             ) : denied ? null : (
                 <button
                     onClick={onEnable}
                     className="px-3 py-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 text-white text-xs font-bold hover:from-pink-600 hover:to-rose-600"
                 >
-                    {t('common.save')}
+                    {t('noti.enablePushBtn')}
                 </button>
             )}
         </div>

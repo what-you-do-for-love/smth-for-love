@@ -49,6 +49,12 @@ export function useOneSignal(userId: number | null) {
         if (!ONESIGNAL_APP_ID) return;
         initialized.current = true;
 
+        // Reveal the banner immediately using the raw browser permission
+        // (synchronous, always available where the API exists). This avoids a
+        // flash of "nothing" while OneSignal's async init resolves.
+        const initialNative = readNativePermission();
+        if (initialNative) setPushState(nativeToState(initialNative));
+
         OneSignal.init({
             appId: ONESIGNAL_APP_ID,
             // We manage the prompt ourselves so we only ask after a BE-check.
@@ -60,8 +66,30 @@ export function useOneSignal(userId: number | null) {
                 setPushState(nativeToState(native));
             })
             .catch(() => {
-                setPushState('unsupported');
+                // SDK failed to load. Fall back to whatever the raw browser
+                // permission is. Only mark 'unsupported' if even that is gone.
+                const native = readNativePermission();
+                if (native) {
+                    setPushState(nativeToState(native));
+                } else {
+                    setPushState('unsupported');
+                }
             });
+
+        // Some browsers (notably iOS Safari PWA) only expose the OneSignal
+        // permissionNative field after a brief delay. Poll for up to ~10s so
+        // the banner reflects the actual state instead of staying 'unknown'.
+        let elapsed = 0;
+        const interval = window.setInterval(() => {
+            elapsed += 500;
+            const native = readNativePermission();
+            if (native) {
+                setPushState(nativeToState(native));
+            }
+            if (elapsed >= 10_000) window.clearInterval(interval);
+        }, 500);
+
+        return () => window.clearInterval(interval);
     }, []);
 
     /**
