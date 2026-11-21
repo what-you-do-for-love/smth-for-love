@@ -112,7 +112,16 @@ function buildCandidate(file: File): ImageCandidate {
 async function uploadCandidateToMedia(cand: ImageCandidate) {
     if (!cand.file) throw new Error('Missing file');
     if (cand.mediaType === 'video') {
-        const [video] = await uploadApi.uploadVideos([cand.file]);
+        // Stream progress to a page-level event so the form can show a real
+        // upload bar for big files (600 MB takes a while on mobile).
+        const total = cand.file.size;
+        const [video] = await uploadApi.uploadVideos([cand.file], (loaded) => {
+            if (typeof window !== 'undefined') {
+                window.dispatchEvent(new CustomEvent('upload-progress', {
+                    detail: { name: cand.file!.name, loaded, total },
+                }));
+            }
+        });
         if (!video?.url) throw new Error('Upload returned no URL');
         return {
             url: video.url,
@@ -231,6 +240,28 @@ function MemoryFormModal({
 }) {
     const t = useT();
     const [values, setValues] = useState<MemoryFormValues>(EMPTY_FORM);
+    // Real upload progress (0-100) for the currently-uploading video, if any.
+    // The parent dispatches `upload-progress` window events during the upload;
+    // we lift them into local state so the modal can render a determinate bar.
+    const [uploadPct, setUploadPct] = useState<number | null>(null);
+    const [uploadingName, setUploadingName] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!saving) {
+            setUploadPct(null);
+            setUploadingName(null);
+            return;
+        }
+        const handler = (ev: Event) => {
+            const ce = ev as CustomEvent<{ name: string; loaded: number; total: number }>;
+            if (!ce.detail?.total) return;
+            const pct = Math.min(100, Math.round((ce.detail.loaded / ce.detail.total) * 100));
+            setUploadPct(pct);
+            setUploadingName(ce.detail.name);
+        };
+        window.addEventListener('upload-progress', handler);
+        return () => window.removeEventListener('upload-progress', handler);
+    }, [saving]);
 
     useEffect(() => {
         if (!open) return;
@@ -270,9 +301,26 @@ function MemoryFormModal({
 
     const handlePickFiles = (files: File[]) => {
         if (files.length === 0) return;
+        // Fail fast instead of uploading 600 MB and then getting a 400 back.
+        const VIDEO_LIMIT = 600 * 1024 * 1024;
+        const IMAGE_LIMIT = 10 * 1024 * 1024;
+        const accepted: File[] = [];
+        for (const f of files) {
+            const isVideo = f.type.startsWith('video/');
+            const limit = isVideo ? VIDEO_LIMIT : IMAGE_LIMIT;
+            if (f.size > limit) {
+                toast.error(t('memories.fileTooLarge', {
+                    name: f.name,
+                    limit: Math.round(limit / (1024 * 1024)),
+                }));
+                continue;
+            }
+            accepted.push(f);
+        }
+        if (accepted.length === 0) return;
         setValues((v) => ({
             ...v,
-            imageCandidates: [...v.imageCandidates, ...files.map(buildCandidate)],
+            imageCandidates: [...v.imageCandidates, ...accepted.map(buildCandidate)],
         }));
     };
 
@@ -385,6 +433,20 @@ function MemoryFormModal({
                     )}
 
                     <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 pt-2">
+                        {saving && uploadPct !== null && (
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between text-[11px] text-gray-500 font-medium mb-1">
+                                    <span className="truncate">{uploadingName ?? t('memories.uploading')}</span>
+                                    <span className="ml-2 flex-shrink-0">{uploadPct}%</span>
+                                </div>
+                                <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                                    <div
+                                        className="h-full bg-gradient-to-r from-pink-400 to-rose-500 transition-all duration-200"
+                                        style={{ width: `${uploadPct}%` }}
+                                    />
+                                </div>
+                            </div>
+                        )}
                         <button
                             type="button"
                             onClick={onCancel}

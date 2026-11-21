@@ -130,6 +130,60 @@ async function postAttachmentFiles(
     return (await resp.json()) as unknown[];
 }
 
+/**
+ * Multipart POST using XHR so the caller gets upload-progress events. Used
+ * for the video endpoint — a 600 MB body would otherwise just silently stall
+ * with no feedback until it finishes.
+ */
+function postVideoFilesWithProgress(
+    url: string,
+    files: File[],
+    onProgress?: (loadedBytes: number, totalBytes: number) => void,
+): Promise<UploadedVideo[]> {
+    if (!files || files.length === 0) return Promise.resolve([]);
+
+    const form = new FormData();
+    files.forEach((f) => form.append('files', f));
+
+    const token = (() => {
+        try { return localStorage.getItem('token'); } catch { return null; }
+    })();
+
+    return new Promise<UploadedVideo[]>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${API_HOST}${url}`);
+        if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        xhr.responseType = 'text';
+
+        xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable && onProgress) onProgress(e.loaded, e.total);
+        };
+
+        xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                try {
+                    resolve(JSON.parse(xhr.responseText) as UploadedVideo[]);
+                } catch (e) {
+                    reject(new Error(`Invalid JSON from server: ${(e as Error).message}`));
+                }
+            } else {
+                let message = `HTTP ${xhr.status}`;
+                try {
+                    const data = JSON.parse(xhr.responseText);
+                    message = data.message || message;
+                } catch {
+                    if (xhr.responseText) message = xhr.responseText;
+                }
+                reject(new Error(message));
+            }
+        };
+
+        xhr.onerror = () => reject(new Error('Network error during upload'));
+        xhr.ontimeout = () => reject(new Error('Upload timed out'));
+        xhr.send(form);
+    });
+}
+
 export const uploadApi = {
     /**
      * Uploads files via the generic `/api/uploads/images` endpoint. Returns
@@ -143,12 +197,12 @@ export const uploadApi = {
 
     /**
      * Uploads video files through the BE's dedicated `/api/uploads/videos`
-     * endpoint (Cloudinary `resource_type=video`). Returns playable URLs plus
-     * the poster thumbnail + dimensions/duration Cloudinary derives. Callers
-     * attach the result to a memory with `memoryApi.addMedia` or embed it in
-     * `create({ media: [...] })`.
+     * endpoint, which proxies to Cloudflare R2 (no per-file size cap — a 600 MB
+     * file is accepted). Returns playable URLs; `onProgress` is called with
+     * (loadedBytes, totalBytes) throughout the upload.
      */
-    uploadVideos: (files: File[]) => postRawJson<UploadedVideo>('/api/uploads/videos', files),
+    uploadVideos: (files: File[], onProgress?: (loaded: number, total: number) => void) =>
+        postVideoFilesWithProgress('/api/uploads/videos', files, onProgress),
 
     /**
      * Attach images directly to a city visit through the BE's dedicated
