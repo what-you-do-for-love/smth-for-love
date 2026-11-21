@@ -6,6 +6,17 @@ export type UploadedImage = {
     size: number;
 };
 
+export type UploadedVideo = {
+    url: string;
+    thumbnailUrl?: string | null;
+    fileName: string;
+    size: number;
+    format?: string | null;
+    width?: number | null;
+    height?: number | null;
+    durationSeconds?: number | null;
+};
+
 /**
  * Raw Cloudinary upload used by endpoints that do not have their own
  * `upload-multiple` route. The BE endpoint must accept `files` (one or more)
@@ -15,6 +26,14 @@ async function postRawFiles(
     url: string,
     files: File[],
 ): Promise<UploadedImage[]> {
+    return postRawJson<UploadedImage>(url, files);
+}
+
+/**
+ * Generic multipart POST that returns a JSON array. Used by the image and
+ * video upload endpoints (they differ only in the response shape).
+ */
+async function postRawJson<T>(url: string, files: File[]): Promise<T[]> {
     if (!files || files.length === 0) return [];
 
     const form = new FormData();
@@ -49,7 +68,7 @@ async function postRawFiles(
         throw new Error(message);
     }
 
-    return (await resp.json()) as UploadedImage[];
+    return (await resp.json()) as T[];
 }
 
 /**
@@ -121,6 +140,15 @@ export const uploadApi = {
      * BE route. Today that's Memories (CREATE-flow uploads).
      */
     uploadRaw: (files: File[]) => postRawFiles('/api/uploads/images', files),
+
+    /**
+     * Uploads video files through the BE's dedicated `/api/uploads/videos`
+     * endpoint (Cloudinary `resource_type=video`). Returns playable URLs plus
+     * the poster thumbnail + dimensions/duration Cloudinary derives. Callers
+     * attach the result to a memory with `memoryApi.addMedia` or embed it in
+     * `create({ media: [...] })`.
+     */
+    uploadVideos: (files: File[]) => postRawJson<UploadedVideo>('/api/uploads/videos', files),
 
     /**
      * Attach images directly to a city visit through the BE's dedicated

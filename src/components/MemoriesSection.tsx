@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { toast } from 'sonner';
 import { memoryApi, uploadApi } from '@/api';
 import { getUserId } from '@/lib/ultis';
-import { Memory } from '@/types';
+import { Memory, MemoryMediaInput } from '@/types';
 import PhotoLightbox, { LightboxImage } from './PhotoLightbox';
 import { useLanguage, useT } from '@/i18n/LanguageProvider';
 import {
@@ -22,6 +22,8 @@ import {
     Link as LinkIcon,
     Send,
     Upload,
+    Play,
+    Film,
 } from 'lucide-react';
 
 // ---- Helpers ----
@@ -62,8 +64,8 @@ function fromInputDate(value: string): string {
 // ---- Add/Edit modal ----
 
 /**
- * A image the user has attached to the form but hasn't necessarily uploaded yet.
- * `status` tracks where this candidate is in the lifecycle.
+ * An image or video the user has attached to the form but hasn't necessarily
+ * uploaded yet. `status` tracks where this candidate is in the lifecycle.
  */
 export type ImageCandidate = {
     /** Stable id used for React keys and array indexing. */
@@ -76,7 +78,128 @@ export type ImageCandidate = {
     previewUrl: string;
     status: 'pending' | 'uploading' | 'done' | 'failed';
     errorMessage?: string;
+    /** 'image' or 'video' — decides preview + upload endpoint. */
+    mediaType: 'image' | 'video';
+    /** Poster frame (videos only, set once uploaded). */
+    thumbnailUrl?: string | null;
+    durationSeconds?: number | null;
+    width?: number | null;
+    height?: number | null;
 };
+
+/** Accepted MIME list for the "add media" pickers. */
+export const MEDIA_ACCEPT = 'image/*,video/mp4,video/quicktime,video/webm,video/x-m4v';
+
+function fileMediaType(file: File): 'image' | 'video' {
+    return file.type.startsWith('video/') ? 'video' : 'image';
+}
+
+function buildCandidate(file: File): ImageCandidate {
+    return {
+        id: `${Date.now()}-${file.name}-${Math.random().toString(36).slice(2, 8)}`,
+        file,
+        previewUrl: URL.createObjectURL(file),
+        status: 'pending',
+        mediaType: fileMediaType(file),
+    };
+}
+
+/**
+ * Uploads one candidate through the right endpoint (image vs video) and
+ * returns a MemoryMediaInput ready to send to the memories API.
+ */
+async function uploadCandidateToMedia(cand: ImageCandidate) {
+    if (!cand.file) throw new Error('Missing file');
+    if (cand.mediaType === 'video') {
+        const [video] = await uploadApi.uploadVideos([cand.file]);
+        if (!video?.url) throw new Error('Upload returned no URL');
+        return {
+            url: video.url,
+            mediaType: 'video' as const,
+            thumbnailUrl: video.thumbnailUrl ?? undefined,
+            durationSeconds: video.durationSeconds ?? undefined,
+            width: video.width ?? undefined,
+            height: video.height ?? undefined,
+        };
+    }
+    const [image] = await uploadApi.uploadRaw([cand.file]);
+    if (!image?.url) throw new Error('Upload returned no URL');
+    return { url: image.url, mediaType: 'image' as const };
+}
+
+/** Formats a duration in seconds as m:ss (or h:mm:ss for long videos). */
+function formatDuration(seconds: number): string {
+    const s = Math.max(0, Math.round(seconds));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${m}:${pad(sec)}`;
+}
+
+/** A small thumbnail tile for a pending candidate (video shows a play badge). */
+function CandidateTile({
+    cand,
+    onRemove,
+    disabled,
+    failedLabel,
+    deleteTitle,
+}: {
+    cand: ImageCandidate;
+    onRemove: () => void;
+    disabled?: boolean;
+    failedLabel: string;
+    deleteTitle: string;
+}) {
+    return (
+        <div className="relative group rounded-lg overflow-hidden border border-gray-100 aspect-square bg-black/5">
+            {cand.mediaType === 'video' ? (
+                <video
+                    src={cand.previewUrl}
+                    muted
+                    playsInline
+                    preload="metadata"
+                    className="w-full h-full object-cover"
+                />
+            ) : (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                    src={cand.previewUrl}
+                    alt=""
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none';
+                    }}
+                />
+            )}
+            {cand.mediaType === 'video' && (
+                <span className="pointer-events-none absolute left-1 bottom-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/60 text-white text-[10px] font-bold">
+                    <Play className="h-3 w-3 fill-white" />
+                    {cand.durationSeconds ? formatDuration(cand.durationSeconds) : 'Video'}
+                </span>
+            )}
+            {cand.status === 'uploading' && (
+                <div className="absolute inset-0 bg-black/40 flex items-center justify-center text-white text-[11px] font-bold">
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                </div>
+            )}
+            {cand.status === 'failed' && (
+                <div className="absolute inset-0 bg-red-500/70 flex items-center justify-center text-white text-[11px] font-bold px-1 text-center">
+                    {failedLabel}
+                </div>
+            )}
+            <button
+                type="button"
+                onClick={onRemove}
+                disabled={disabled}
+                className="absolute top-1 right-1 h-6 w-6 rounded-md bg-white/90 text-red-500 hover:bg-red-50 flex items-center justify-center shadow opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-30"
+                title={deleteTitle}
+            >
+                <X className="h-3 w-3" />
+            </button>
+        </div>
+    );
+}
 
 type MemoryFormValues = {
     title: string;
@@ -148,15 +271,7 @@ function MemoryFormModal({
         if (files.length === 0) return;
         setValues((v) => ({
             ...v,
-            imageCandidates: [
-                ...v.imageCandidates,
-                ...files.map((f) => ({
-                    id: `${Date.now()}-${f.name}-${Math.random().toString(36).slice(2, 8)}`,
-                    file: f,
-                    previewUrl: URL.createObjectURL(f),
-                    status: 'pending' as const,
-                })),
-            ],
+            imageCandidates: [...v.imageCandidates, ...files.map(buildCandidate)],
         }));
     };
 
@@ -233,14 +348,14 @@ function MemoryFormModal({
                     {!initial && (
                         <div>
                             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">
-                                {t('memories.fieldImages')}
+                                {t('memories.fieldMedia')}
                             </label>
                             <label className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl border border-dashed border-pink-200 bg-pink-50/50 text-pink-600 text-sm font-bold cursor-pointer hover:bg-pink-50 transition-colors">
                                 <Upload className="h-4 w-4" />
-                                {t('memories.pickImages')}
+                                {t('memories.pickMedia')}
                                 <input
                                     type="file"
-                                    accept="image/*"
+                                    accept={MEDIA_ACCEPT}
                                     multiple
                                     className="hidden"
                                     onChange={(e) => {
@@ -250,43 +365,18 @@ function MemoryFormModal({
                                     }}
                                 />
                             </label>
+                            <p className="mt-1 text-[11px] text-gray-400">{t('memories.mediaHint')}</p>
 
                             {values.imageCandidates.length > 0 && (
                                 <div className="mt-2 grid grid-cols-3 gap-2">
                                     {values.imageCandidates.map((cand) => (
-                                        <div
+                                        <CandidateTile
                                             key={cand.id}
-                                            className="relative group rounded-lg overflow-hidden border border-gray-100 aspect-square bg-gray-50"
-                                        >
-                                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                                            <img
-                                                src={cand.previewUrl}
-                                                alt=""
-                                                className="w-full h-full object-cover"
-                                                onError={(e) => {
-                                                    (e.target as HTMLImageElement).style.display = 'none';
-                                                }}
-                                            />
-                                            {/* Status badge (only shown while uploading / failed — done is the natural image state) */}
-                                            {cand.status === 'uploading' && (
-                                                <div className="absolute inset-0 bg-black/40 flex items-center justify-center text-white text-[11px] font-bold">
-                                                    {t('memories.uploading')}
-                                                </div>
-                                            )}
-                                            {cand.status === 'failed' && (
-                                                <div className="absolute inset-0 bg-red-500/70 flex items-center justify-center text-white text-[11px] font-bold px-1 text-center">
-                                                    {t('memories.failedBadge')}
-                                                </div>
-                                            )}
-                                            <button
-                                                type="button"
-                                                onClick={() => handleRemoveNewImage(cand.id)}
-                                                className="absolute top-1 right-1 h-6 w-6 rounded-md bg-white/90 text-red-500 hover:bg-red-50 flex items-center justify-center shadow opacity-0 group-hover:opacity-100 transition-opacity"
-                                                title={t('common.delete')}
-                                            >
-                                                <X className="h-3 w-3" />
-                                            </button>
-                                        </div>
+                                            cand={cand}
+                                            onRemove={() => handleRemoveNewImage(cand.id)}
+                                            failedLabel={t('memories.failedBadge')}
+                                            deleteTitle={t('common.delete')}
+                                        />
                                     ))}
                                 </div>
                             )}
@@ -353,15 +443,7 @@ function MemoryDetailPanel({
 
     const handlePickFiles = (files: File[]) => {
         if (files.length === 0) return;
-        setPendingImages((prev) => [
-            ...prev,
-            ...files.map((f) => ({
-                id: `${Date.now()}-${f.name}-${Math.random().toString(36).slice(2, 8)}`,
-                file: f,
-                previewUrl: URL.createObjectURL(f),
-                status: 'pending' as const,
-            })),
-        ]);
+        setPendingImages((prev) => [...prev, ...files.map(buildCandidate)]);
     };
 
     const handleRemovePending = (id: string) => {
@@ -386,12 +468,9 @@ function MemoryDetailPanel({
             if (!cand.file) continue;
             toast.loading(t('memories.uploadingProgress', { current: i + 1, total: pending.length }), { id: progressId });
             try {
-                const result = await uploadApi.uploadRaw([cand.file]);
-                const url = result[0]?.url;
-                if (url) {
-                    await memoryApi.addImage(memory.id, requesterId, { imageUrl: url });
-                    uploaded++;
-                }
+                const media = await uploadCandidateToMedia(cand);
+                await memoryApi.addMedia(memory.id, requesterId, media);
+                uploaded++;
             } catch (err: unknown) {
                 const msg = err instanceof Error ? err.message : t('account.uploadFailed');
                 failedNames.push(cand.file?.name ?? 'image');
@@ -515,22 +594,59 @@ function MemoryDetailPanel({
                                         key={img.id}
                                         className="relative group rounded-2xl overflow-hidden border border-gray-100 bg-gray-50 aspect-square"
                                     >
-                                        {/* eslint-disable-next-line @next/next/no-img-element */}
                                         <button
                                             type="button"
                                             onClick={() => onImageClick(idx)}
                                             className="absolute inset-0 z-0"
-                                            aria-label={t('common.openPhotoViewer')}
+                                            aria-label={
+                                                img.mediaType === 'video'
+                                                    ? t('memories.playVideo')
+                                                    : t('common.openPhotoViewer')
+                                            }
                                         />
-                                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                                        <img
-                                            src={img.imageUrl}
-                                            alt=""
-                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                            onError={(e) => {
-                                                (e.target as HTMLImageElement).style.display = 'none';
-                                            }}
-                                        />
+                                        {img.mediaType === 'video' ? (
+                                            <>
+                                                {img.thumbnailUrl ? (
+                                                    // eslint-disable-next-line @next/next/no-img-element
+                                                    <img
+                                                        src={img.thumbnailUrl}
+                                                        alt=""
+                                                        className="w-full h-full object-cover"
+                                                        onError={(e) => {
+                                                            (e.target as HTMLImageElement).style.display = 'none';
+                                                        }}
+                                                    />
+                                                ) : (
+                                                    <video
+                                                        src={img.imageUrl}
+                                                        muted
+                                                        playsInline
+                                                        preload="metadata"
+                                                        className="w-full h-full object-cover"
+                                                    />
+                                                )}
+                                                <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                                                    <span className="h-10 w-10 rounded-full bg-black/55 text-white flex items-center justify-center shadow-lg">
+                                                        <Play className="h-5 w-5 fill-white" />
+                                                    </span>
+                                                </span>
+                                                {img.durationSeconds ? (
+                                                    <span className="pointer-events-none absolute left-1.5 bottom-1.5 px-1.5 py-0.5 rounded bg-black/60 text-white text-[10px] font-bold">
+                                                        {formatDuration(img.durationSeconds)}
+                                                    </span>
+                                                ) : null}
+                                            </>
+                                        ) : (
+                                            // eslint-disable-next-line @next/next/no-img-element
+                                            <img
+                                                src={img.imageUrl}
+                                                alt=""
+                                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                                onError={(e) => {
+                                                    (e.target as HTMLImageElement).style.display = 'none';
+                                                }}
+                                            />
+                                        )}
                                         <button
                                             type="button"
                                             onClick={(e) => {
@@ -550,14 +666,14 @@ function MemoryDetailPanel({
                             <p className="text-xs text-gray-400 italic">{t('memories.noImages')}</p>
                         )}
 
-                        {/* Attach images (deferred until the user clicks Save) */}
+                        {/* Attach media (deferred until the user clicks Save) */}
                         <div className="mt-3 space-y-2">
                             <label className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-xl border border-dashed border-pink-200 bg-pink-50/50 text-pink-600 text-sm font-bold cursor-pointer hover:bg-pink-50 transition-colors">
                                 <Upload className="h-4 w-4" />
-                                {t('memories.pickImages')}
+                                {t('memories.pickMedia')}
                                 <input
                                     type="file"
-                                    accept="image/*"
+                                    accept={MEDIA_ACCEPT}
                                     multiple
                                     className="hidden"
                                     onChange={(e) => {
@@ -735,33 +851,63 @@ function MemoryCard({
     return (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col">
             {memory.images.length > 0 ? (
-                <button
-                    type="button"
-                    onClick={() => onImageClick(0)}
-                    className="relative aspect-[4/3] bg-gray-50 w-full block group"
-                >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                        src={memory.images[0].imageUrl}
-                        alt=""
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        onError={(e) => {
-                            (e.target as HTMLImageElement).style.display = 'none';
-                        }}
-                    />
-                    {/* Hover overlay hint */}
-                    <span className="absolute inset-0 bg-black/0 group-hover:bg-black/15 transition-colors flex items-center justify-center">
-                        <span className="opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/90 text-pink-600 text-xs font-black shadow">
-                            <ImageIcon className="h-3.5 w-3.5" />
-                            {t('memories.viewPhotos')}
-                        </span>
-                    </span>
-                    {memory.images.length > 1 && (
-                        <span className="absolute bottom-2 right-2 bg-black/60 text-white text-[11px] font-bold px-2 py-1 rounded-lg flex items-center gap-1">
-                            <ImageIcon className="h-3 w-3" />+{memory.images.length - 1}
-                        </span>
-                    )}
-                </button>
+                (() => {
+                    const cover = memory.images[0];
+                    const coverIsVideo = cover.mediaType === 'video';
+                    const coverSrc =
+                        coverIsVideo && cover.thumbnailUrl ? cover.thumbnailUrl : cover.imageUrl;
+                    return (
+                        <button
+                            type="button"
+                            onClick={() => onImageClick(0)}
+                            className="relative aspect-[4/3] bg-gray-50 w-full block group"
+                        >
+                            {coverIsVideo && !cover.thumbnailUrl ? (
+                                <video
+                                    src={cover.imageUrl}
+                                    poster={cover.thumbnailUrl ?? undefined}
+                                    muted
+                                    playsInline
+                                    preload="metadata"
+                                    className="w-full h-full object-cover"
+                                />
+                            ) : (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                    src={coverSrc}
+                                    alt=""
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                    onError={(e) => {
+                                        (e.target as HTMLImageElement).style.display = 'none';
+                                    }}
+                                />
+                            )}
+                            {coverIsVideo && (
+                                <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                                    <span className="h-12 w-12 rounded-full bg-black/50 text-white flex items-center justify-center shadow-lg backdrop-blur-sm">
+                                        <Play className="h-6 w-6 fill-white" />
+                                    </span>
+                                </span>
+                            )}
+                            {/* Hover overlay hint */}
+                            <span className="absolute inset-0 bg-black/0 group-hover:bg-black/15 transition-colors flex items-center justify-center">
+                                <span className="opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/90 text-pink-600 text-xs font-black shadow">
+                                    {coverIsVideo ? (
+                                        <Film className="h-3.5 w-3.5" />
+                                    ) : (
+                                        <ImageIcon className="h-3.5 w-3.5" />
+                                    )}
+                                    {coverIsVideo ? t('memories.playVideo') : t('memories.viewPhotos')}
+                                </span>
+                            </span>
+                            {memory.images.length > 1 && (
+                                <span className="absolute bottom-2 right-2 bg-black/60 text-white text-[11px] font-bold px-2 py-1 rounded-lg flex items-center gap-1">
+                                    <ImageIcon className="h-3 w-3" />+{memory.images.length - 1}
+                                </span>
+                            )}
+                        </button>
+                    );
+                })()
             ) : (
                 <button
                     type="button"
@@ -869,6 +1015,8 @@ export default function MemoriesSection() {
                 id: img.id,
                 url: img.imageUrl,
                 caption: memory.title,
+                mediaType: img.mediaType === 'video' ? 'video' : 'image',
+                poster: img.thumbnailUrl ?? null,
             })),
             index: Math.max(0, Math.min(index, memory.images.length - 1)),
         });
@@ -906,7 +1054,14 @@ export default function MemoriesSection() {
             const progressToastId =
                 pending.length > 0 ? toast.loading(t('memories.uploadingProgress', { current: 0, total: pending.length })) : '';
 
-            const uploadedUrls: string[] = alreadyDone.map((c) => c.url!).filter(Boolean);
+            const media: MemoryMediaInput[] = alreadyDone.map((c) => ({
+                url: c.url!,
+                mediaType: c.mediaType,
+                thumbnailUrl: c.thumbnailUrl ?? undefined,
+                durationSeconds: c.durationSeconds ?? undefined,
+                width: c.width ?? undefined,
+                height: c.height ?? undefined,
+            }));
             const failedNames: string[] = [];
 
             for (let i = 0; i < pending.length; i++) {
@@ -914,11 +1069,10 @@ export default function MemoriesSection() {
                 if (!cand.file) continue;
                 toast.loading(t('memories.uploadingProgress', { current: i + 1, total: pending.length }), { id: progressToastId });
                 try {
-                    const [result] = await uploadApi.uploadRaw([cand.file]);
-                    uploadedUrls.push(result.url);
+                    media.push(await uploadCandidateToMedia(cand));
                 } catch (err: unknown) {
                     const msg = err instanceof Error ? err.message : t('account.uploadFailed');
-                    failedNames.push(cand.file?.name ?? 'image');
+                    failedNames.push(cand.file?.name ?? 'media');
                     console.warn(`Upload failed for ${cand.file?.name}:`, msg);
                 }
             }
@@ -928,12 +1082,12 @@ export default function MemoriesSection() {
                     toast.success(t('memories.uploadedAll', { count: pending.length }), {
                         id: progressToastId,
                     });
-                } else if (uploadedUrls.length === 0) {
+                } else if (media.length === 0) {
                     toast.error(t('memories.uploadedAllFailed'), { id: progressToastId });
                     return;
                 } else {
                     toast.warning(
-                        t('memories.uploadedPartial', { uploaded: uploadedUrls.length, failed: failedNames.length }),
+                        t('memories.uploadedPartial', { uploaded: media.length, failed: failedNames.length }),
                         { id: progressToastId },
                     );
                 }
@@ -944,7 +1098,7 @@ export default function MemoriesSection() {
                 title: title.trim(),
                 description: description.trim(),
                 dateHappened: fromInputDate(dateHappened),
-                imageUrls: uploadedUrls,
+                media: media.length > 0 ? media : undefined,
             });
             toast.success(t('memories.created'));
             setCreateOpen(false);

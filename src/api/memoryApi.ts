@@ -5,6 +5,7 @@ import {
     UpdateMemoryBody,
     MemoryImage,
     MemoryNote,
+    MemoryMediaInput,
     AddMemoryImageBody,
     AddMemoryNoteBody,
 } from '../types';
@@ -54,6 +55,21 @@ export const memoryApi = {
     ): Promise<MemoryImage> => {
         return api.post<MemoryImage>(
             `/api/memories/${memoryId}/images?requesterId=${requesterId}`,
+            body,
+        );
+    },
+
+    /**
+     * Attach a rich media item (image or video) to a memory. Videos carry
+     * the thumbnail + dimensions/duration returned by `uploadApi.uploadVideos`.
+     */
+    addMedia: async (
+        memoryId: number,
+        requesterId: number,
+        body: MemoryMediaInput,
+    ): Promise<MemoryImage> => {
+        return api.post<MemoryImage>(
+            `/api/memories/${memoryId}/media?requesterId=${requesterId}`,
             body,
         );
     },

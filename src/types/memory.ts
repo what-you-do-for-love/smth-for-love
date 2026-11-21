@@ -1,6 +1,13 @@
+export type MemoryMediaType = 'image' | 'video';
+
 export type MemoryImage = {
     id: number;
     imageUrl: string;
+    mediaType: MemoryMediaType;
+    thumbnailUrl?: string | null;
+    durationSeconds?: number | null;
+    width?: number | null;
+    height?: number | null;
     dateCreated: string;
 };
 
@@ -26,12 +33,22 @@ export type Memory = {
 
 // ---- Request bodies ----
 
+export type MemoryMediaInput = {
+    url: string;
+    mediaType: MemoryMediaType;
+    thumbnailUrl?: string;
+    durationSeconds?: number;
+    width?: number;
+    height?: number;
+};
+
 export type CreateMemoryBody = {
     ownerId: number;
     title: string;
     description: string;
     dateHappened: string; // ISO string
     imageUrls?: string[];
+    media?: MemoryMediaInput[];
 };
 
 export type UpdateMemoryBody = {

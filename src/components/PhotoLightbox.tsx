@@ -12,6 +12,10 @@ export type LightboxImage = {
     url: string;
     /** Optional caption shown below the photo */
     caption?: string;
+    /** 'image' (default) or 'video' — controls which player is rendered. */
+    mediaType?: 'image' | 'video';
+    /** Poster frame for videos. */
+    poster?: string | null;
 };
 
 /**
@@ -92,7 +96,7 @@ export default function PhotoLightbox({
             const a = document.createElement('a');
             const ext = blob.type.split('/')[1]?.split(';')[0] ?? 'jpg';
             a.href = objectUrl;
-            a.download = `photo-${current.id}.${ext}`;
+            a.download = `${current.mediaType === 'video' ? 'video' : 'photo'}-${current.id}.${ext}`;
             document.body.appendChild(a);
             a.click();
             a.remove();
@@ -130,26 +134,30 @@ export default function PhotoLightbox({
                     </span>
                 </div>
                 <div className="flex items-center gap-2">
-                    <button
-                        type="button"
-                        onClick={() => setZoom((z) => Math.max(z - 0.25, 1))}
-                        disabled={zoom <= 1}
-                        title={t('lightbox.zoomOut')}
-                        aria-label={t('lightbox.zoomOut')}
-                        className="h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center disabled:opacity-30 transition-colors"
-                    >
-                        <ZoomOut className="h-4 w-4" />
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setZoom((z) => Math.min(z + 0.25, 3))}
-                        disabled={zoom >= 3}
-                        title={t('lightbox.zoomIn')}
-                        aria-label={t('lightbox.zoomIn')}
-                        className="h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center disabled:opacity-30 transition-colors"
-                    >
-                        <ZoomIn className="h-4 w-4" />
-                    </button>
+                    {current.mediaType !== 'video' && (
+                        <>
+                            <button
+                                type="button"
+                                onClick={() => setZoom((z) => Math.max(z - 0.25, 1))}
+                                disabled={zoom <= 1}
+                                title={t('lightbox.zoomOut')}
+                                aria-label={t('lightbox.zoomOut')}
+                                className="h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center disabled:opacity-30 transition-colors"
+                            >
+                                <ZoomOut className="h-4 w-4" />
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setZoom((z) => Math.min(z + 0.25, 3))}
+                                disabled={zoom >= 3}
+                                title={t('lightbox.zoomIn')}
+                                aria-label={t('lightbox.zoomIn')}
+                                className="h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center disabled:opacity-30 transition-colors"
+                            >
+                                <ZoomIn className="h-4 w-4" />
+                            </button>
+                        </>
+                    )}
                     <button
                         type="button"
                         onClick={handleDownload}
@@ -193,35 +201,50 @@ export default function PhotoLightbox({
                 </>
             )}
 
-            {/* Image area */}
+            {/* Image / video area */}
             <div
                 className="absolute inset-0 flex items-center justify-center select-none"
                 onWheel={onWheel}
             >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                    key={current.id}
-                    src={current.url}
-                    alt={current.caption ?? `Photo ${safeIndex + 1}`}
-                    draggable={false}
-                    onMouseDown={() => setDragging(true)}
-                    onMouseUp={() => setDragging(false)}
-                    onMouseLeave={() => setDragging(false)}
-                    onClick={(e) => {
-                        // Single click toggles 1x → 2x on the image itself.
-                        if (dragging) return;
-                        if (e.target !== e.currentTarget) return;
-                        setZoom((z) => (z > 1 ? 1 : 2));
-                    }}
-                    className="max-h-[85vh] max-w-[92vw] object-contain shadow-2xl transition-transform duration-200 ease-out"
-                    style={{
-                        transform: `scale(${zoom})`,
-                        cursor: zoom > 1 ? (dragging ? 'grabbing' : 'grab') : 'zoom-in',
-                    }}
-                    onError={(e) => {
-                        (e.target as HTMLImageElement).style.opacity = '0.3';
-                    }}
-                />
+                {current.mediaType === 'video' ? (
+                    <video
+                        key={current.id}
+                        src={current.url}
+                        poster={current.poster ?? undefined}
+                        controls
+                        autoPlay
+                        playsInline
+                        preload="metadata"
+                        className="max-h-[85vh] max-w-[92vw] rounded-lg shadow-2xl bg-black"
+                    />
+                ) : (
+                    <>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                            key={current.id}
+                            src={current.url}
+                            alt={current.caption ?? `Photo ${safeIndex + 1}`}
+                            draggable={false}
+                            onMouseDown={() => setDragging(true)}
+                            onMouseUp={() => setDragging(false)}
+                            onMouseLeave={() => setDragging(false)}
+                            onClick={(e) => {
+                                // Single click toggles 1x → 2x on the image itself.
+                                if (dragging) return;
+                                if (e.target !== e.currentTarget) return;
+                                setZoom((z) => (z > 1 ? 1 : 2));
+                            }}
+                            className="max-h-[85vh] max-w-[92vw] object-contain shadow-2xl transition-transform duration-200 ease-out"
+                            style={{
+                                transform: `scale(${zoom})`,
+                                cursor: zoom > 1 ? (dragging ? 'grabbing' : 'grab') : 'zoom-in',
+                            }}
+                            onError={(e) => {
+                                (e.target as HTMLImageElement).style.opacity = '0.3';
+                            }}
+                        />
+                    </>
+                )}
             </div>
 
             {/* Caption + dot pager */}
