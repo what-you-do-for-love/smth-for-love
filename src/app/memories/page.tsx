@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRequireAuth } from '@/hooks/useRequireAuth';
 import { getCookie, getUserName } from '@/lib/ultis';
 import { Heart } from 'lucide-react';
@@ -49,7 +49,18 @@ export default function MemoriesPage() {
 
             {/* Memories section */}
             <div className="bg-white p-5 sm:p-8 rounded-3xl border border-gray-100 shadow-xl shadow-pink-50/50">
-                <MemoriesSection />
+                <Suspense
+                    fallback={
+                        <div className="flex items-center justify-center py-12">
+                            <svg className="animate-spin h-7 w-7 text-pink-500" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            </svg>
+                        </div>
+                    }
+                >
+                    <MemoriesSection />
+                </Suspense>
             </div>
         </div>
     );

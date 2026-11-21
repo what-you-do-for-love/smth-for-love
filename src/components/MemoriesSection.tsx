@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import { memoryApi, uploadApi } from '@/api';
 import { getUserId } from '@/lib/ultis';
@@ -985,6 +986,44 @@ function MemoryCard({
 
 export default function MemoriesSection() {
     const t = useT();
+    const router = useRouter();
+    const pathname = usePathname();
+    const searchParams = useSearchParams();
+
+    // Deep-link sync: `?m={memoryId}` in the URL mirrors the open detail panel,
+    // so the address bar carries the memory id, refresh re-opens it, back/forward
+    // closes/re-opens it, and the link can be shared.
+    const linkedId = (() => {
+        const raw = searchParams?.get('m');
+        if (!raw) return null;
+        const id = parseInt(raw, 10);
+        return Number.isFinite(id) ? id : null;
+    })();
+
+    const buildUrl = useCallback(
+        (id: number | null) => {
+            const qs = new URLSearchParams(searchParams?.toString() ?? '');
+            if (id === null) qs.delete('m');
+            else qs.set('m', String(id));
+            const q = qs.toString();
+            return q ? `${pathname}?${q}` : pathname;
+        },
+        [pathname, searchParams],
+    );
+
+    const openMemory = useCallback(
+        (memory: Memory) => {
+            router.push(buildUrl(memory.id), { scroll: false });
+        },
+        [router, buildUrl],
+    );
+
+    const closeMemory = useCallback(() => {
+        // Strip `?m` without adding a history entry. (Opening pushes an entry, so
+        // the browser Back button also closes the panel naturally.)
+        router.replace(buildUrl(null), { scroll: false });
+    }, [router, buildUrl]);
+
     const [myId, setMyId] = useState<number>(0);
     const [isReady, setIsReady] = useState(false);
 
@@ -1039,6 +1078,37 @@ export default function MemoriesSection() {
     useEffect(() => {
         if (isReady && myId) fetchAll();
     }, [isReady, myId, fetchAll]);
+
+    // Deep link / history: when `?m={id}` is present, make sure its memory is
+    // loaded (it may not be in the list yet, or the URL may have been pasted)
+    // and open the detail panel. When the param disappears (close button, back
+    // button), close the panel.
+    const linkedFetchingRef = useRef(false);
+    useEffect(() => {
+        if (!isReady || !myId) return;
+        if (linkedId === null) {
+            setOpening(null);
+            return;
+        }
+        const existing = memories.find((m) => m.id === linkedId);
+        if (existing) {
+            setOpening(existing);
+            return;
+        }
+        if (linkedFetchingRef.current) return;
+        linkedFetchingRef.current = true;
+        void (async () => {
+            try {
+                const m = await memoryApi.getById(linkedId, myId);
+                setOpening(m);
+            } catch {
+                // Not ours / deleted: drop the stale id from the URL.
+                if (!loading) router.replace(buildUrl(null), { scroll: false });
+            } finally {
+                linkedFetchingRef.current = false;
+            }
+        })();
+    }, [isReady, myId, linkedId, memories, loading, router, buildUrl]);
 
     const handleCreate = async (values: MemoryFormValues) => {
         setSaving(true);
@@ -1140,6 +1210,8 @@ export default function MemoriesSection() {
         try {
             await memoryApi.remove(memory.id, myId);
             toast.success(t('memories.deleted'));
+            // If the deleted memory is the one shown in the URL, clear it.
+            if (linkedId === memory.id) router.replace(buildUrl(null), { scroll: false });
             await fetchAll();
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : t('memories.failedDelete');
@@ -1151,9 +1223,7 @@ export default function MemoriesSection() {
 
     const handleDetailChanged = async () => {
         await fetchAll();
-        // Re-open with the freshest version of the current detail
-        const fresh = memories.find((m) => m.id === opening?.id);
-        if (fresh) setOpening(fresh);
+        // The URL-sync effect re-resolves `opening` from the refreshed list.
     };
 
     if (!isReady || loading) {
@@ -1216,7 +1286,7 @@ export default function MemoriesSection() {
                             key={m.id}
                             memory={m}
                             requesterId={myId}
-                            onOpen={() => setOpening(m)}
+                            onOpen={() => openMemory(m)}
                             onEdit={() => setEditing(m)}
                             onDelete={() => handleDelete(m)}
                             onImageClick={(idx) => openLightboxFor(m, idx)}
@@ -1248,7 +1318,7 @@ export default function MemoriesSection() {
                 <MemoryDetailPanel
                     memory={opening}
                     requesterId={myId}
-                    onClose={() => setOpening(null)}
+                    onClose={closeMemory}
                     onChanged={handleDetailChanged}
                     onImageClick={(idx) => openLightboxFor(opening, idx)}
                 />
